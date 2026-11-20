@@ -43,7 +43,7 @@ namespace ServiceResult.Http
 
         public static IResult MapEnvelope(IResultEnvelope envelope, int successStatusCode)
         {
-            if (envelope.IsFailure)
+            if (!envelope.IsSuccess)
             {
                 return ToProblemResult(envelope.Error);
             }
