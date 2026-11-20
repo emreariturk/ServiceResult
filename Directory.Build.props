@@ -1,0 +1,17 @@
+<Project>
+
+  <PropertyGroup>
+    <VersionPrefix>1.0.0</VersionPrefix>
+
+    <Authors>Yunus Emre Arıtürk</Authors>
+    <Company>Yunus Emre Arıtürk</Company>
+    <Copyright>Copyright (c) 2026 Yunus Emre Arıtürk</Copyright>
+
+    <PackageProjectUrl>https://github.com/emreariturk/ServiceResult</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/emreariturk/ServiceResult</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+</Project>
