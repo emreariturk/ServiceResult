@@ -247,4 +247,236 @@ namespace LegacyBilling.Wcf
 
 ### ✨ Özellikler
 
-- **Çoklu Hedef Mimarisi (`netstandard2.0` & `net8.0`):** Aynı `Result<T>` sözleşmesini hem modern .NET 8/9/10 mikroservislerinde hem de .NET Framework 4.
+- **Çoklu Hedef Mimarisi (`netstandard2.0` & `net8.0`):** Aynı `Result<T>` sözleşmesini hem modern .NET 8/9/10 mikroservislerinde hem de .NET Framework 4.7.2/4.8 tabanlı WCF servislerinde ortak kullanabilirsiniz.
+- **Sıfır Dış Bağımlılık:** Yalnızca .NET'in kendi yerleşik kütüphanelerini kullanır, projenize ekstra 3. parti paket yüklemez.
+- **Otomatik Minimal API Eşlemesi:** Dahili `IEndpointFilter` (`.WithResultMapping()`) yapısı sayesinde endpoint'lerden dönen `Result` ve `Result<T>` nesnelerini otomatik olarak `200 OK`, `204 No Content` veya standart `ProblemDetails` yanıtlarına çevirir.
+- **Implicit Operator Desteği:** Servis metotlarında ekstra sarmalayıcı kod yazmadan doğrudan nesneyi (`return dto;`) veya hatayı (`return Error.NotFound(...);`) döndürebilirsiniz.
+- **Düşük Bellek Tahsisi (Low-Allocation):** `Error` yapısı heap üzerinde gereksiz GC yükü oluşturmaması için `readonly record struct` olarak tasarlanmıştır.
+
+### 📦 Kurulum
+
+```bash
+dotnet add package ServiceResult
+```
+
+---
+
+### ⚙️ Çoklu Hedef (Multi-Target) `.csproj` Yapılandırması
+
+Kütüphanenin hem WCF (`.NET Standard 2.0`) hem de Minimal API (`.NET 8.0+`) hedefleri için derlenmesini sağlayan `.csproj` yapısı:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- ASP.NET Core Minimal API ve ProblemDetails desteği yalnızca .NET 8+ hedefinde aktif edilir -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App"/>
+  </ItemGroup>
+
+</Project>
+```
+
+---
+
+### 🚀 Kullanım 1: ASP.NET Core Mikroservis / Minimal API (.NET 8+)
+
+#### 1. Mikroservis `.csproj` Örneği
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ServiceResult" Version="1.0.0"/>
+  </ItemGroup>
+
+</Project>
+```
+
+#### 2. Servis Katmanı ve Minimal API Endpoint (`Program.cs`)
+
+```csharp
+using ServiceResult;
+using ServiceResult.Http;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddScoped<IOrderService, OrderService>();
+
+var app = builder.Build();
+
+// Tüm route grubu için otomatik Result<T> -> HTTP Status / ProblemDetails dönüşümünü aktif eder
+var orders = app.MapGroup("/api/orders")
+    .WithResultMapping();
+
+orders.MapGet("/{id:int}", async (int id, IOrderService service) =>
+{
+    // Endpoint içinde if/else kontrolüne gerek yoktur — otomatik 200 OK veya 404 ProblemDetails döner
+    return await service.GetByIdAsync(id);
+});
+
+orders.MapPost("/", async (CreateOrderRequest request, IOrderService service) =>
+{
+    var result = await service.CreateAsync(request);
+    // Özel durum kodu (örn. 201 Created) döndürmek istediğinizde açıkça dönüştürebilirsiniz
+    return result.ToHttpResult(StatusCodes.Status201Created);
+});
+
+app.Run();
+
+public sealed record OrderDto(int Id, string CustomerCode, decimal TotalAmount);
+public sealed record CreateOrderRequest(string CustomerCode, decimal TotalAmount);
+
+public interface IOrderService
+{
+    Task<Result<OrderDto>> GetByIdAsync(int id);
+    Task<Result<OrderDto>> CreateAsync(CreateOrderRequest request);
+}
+
+public sealed class OrderService : IOrderService
+{
+    public Task<Result<OrderDto>> GetByIdAsync(int id)
+    {
+        if (id <= 0)
+            return Task.FromResult<Result<OrderDto>>(
+                Error.Validation("Order.InvalidId", "Sipariş numarası sıfırdan büyük olmalıdır."));
+
+        if (id != 42)
+            return Task.FromResult<Result<OrderDto>>(
+                Error.NotFound("Order.NotFound", $"#{id} numaralı sipariş bulunamadı."));
+
+        // OrderDto nesnesi implicit operator ile otomatik olarak Result<OrderDto> tipine dönüşür
+        return Task.FromResult<Result<OrderDto>>(new OrderDto(42, "CUST-100", 1250.00m));
+    }
+
+    public Task<Result<OrderDto>> CreateAsync(CreateOrderRequest request)
+    {
+        if (request.TotalAmount <= 0)
+            return Task.FromResult<Result<OrderDto>>(
+                Error.Validation("Order.InvalidAmount", "Sipariş tutarı pozitif olmalıdır."));
+
+        return Task.FromResult<Result<OrderDto>>(new OrderDto(43, request.CustomerCode, request.TotalAmount));
+    }
+}
+```
+
+#### Otomatik HTTP Hata Çıktısı (RFC 9457 `ProblemDetails`)
+
+`GetByIdAsync(99)` metodu `Error.NotFound(...)` döndürdüğünde istemciye otomatik olarak `404 Not Found` yanıtı iletilir:
+
+```json
+{
+  "type": "[https://tools.ietf.org/html/rfc9110#section-15.5.5](https://tools.ietf.org/html/rfc9110#section-15.5.5)",
+  "title": "Resource Not Found",
+  "status": 404,
+  "detail": "#99 numaralı sipariş bulunamadı.",
+  "errorCode": "Order.NotFound"
+}
+```
+
+---
+
+### 🏢 Kullanım 2: WCF Servisi (.NET Framework 4.8 / CoreWCF)
+
+`ServiceResult` paketi `netstandard2.0` hedefini desteklediği için mevcut WCF servislerinizde ve ortak domain katmanlarınızda hiçbir ASP.NET Core bağımlılığı olmadan aynı `Result<T>` ve `Error` sınıflarını kullanabilirsiniz.
+
+#### 1. WCF Servisi `.csproj` Örneği
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.ServiceModel"/>
+    <Reference Include="System.Runtime.Serialization"/>
+    <PackageReference Include="ServiceResult" Version="1.0.0"/>
+  </ItemGroup>
+
+</Project>
+```
+
+#### 2. WCF Servis Sözleşmesi ve Uygulaması
+
+```csharp
+using System.Runtime.Serialization;
+using System.ServiceModel;
+using ServiceResult;
+
+namespace LegacyBilling.Wcf
+{
+    [ServiceContract]
+    public interface IBillingService
+    {
+        [OperationContract]
+        Result<InvoiceDto> GetInvoice(string invoiceNumber);
+    }
+
+    [DataContract]
+    public sealed class InvoiceDto
+    {
+        [DataMember]
+        public string InvoiceNumber { get; set; } = string.Empty;
+
+        [DataMember]
+        public decimal Amount { get; set; }
+    }
+
+    public sealed class BillingService : IBillingService
+    {
+        public Result<InvoiceDto> GetInvoice(string invoiceNumber)
+        {
+            if (string.IsNullOrWhiteSpace(invoiceNumber))
+            {
+                return Error.Validation("Invoice.EmptyNumber", "Fatura numarası boş olamaz.");
+            }
+
+            if (invoiceNumber != "INV-2026-001")
+            {
+                return Error.NotFound("Invoice.NotFound", $"'{invoiceNumber}' numaralı fatura bulunamadı.");
+            }
+
+            return new InvoiceDto
+            {
+                InvoiceNumber = invoiceNumber,
+                Amount = 4890.50m
+            };
+        }
+    }
+}
+```
+
+---
+
+### 🗂️ Hata Türleri ve HTTP Durum Kodu Eşleştirmesi
+
+| `ErrorType` | Fabrika Metodu | HTTP Durum Kodu | ProblemDetails Başlığı |
+| :--- | :--- | :--- | :--- |
+| `ErrorType.Validation` | `Error.Validation(...)` | `400 Bad Request` | Validation Error |
+| `ErrorType.Failure` | `Error.Failure(...)` | `400 Bad Request` | Bad Request |
+| `ErrorType.Unauthorized` | `Error.Unauthorized(...)` | `401 Unauthorized` | Unauthorized |
+| `ErrorType.Forbidden` | `Error.Forbidden(...)` | `403 Forbidden` | Forbidden |
+| `ErrorType.NotFound` | `Error.NotFound(...)` | `404 Not Found` | Resource Not Found |
+| `ErrorType.Conflict` | `Error.Conflict(...)` | `409 Conflict` | Conflict |
+| `ErrorType.Unexpected` | `Error.Unexpected(...)` | `500 Internal Server Error` | Internal Server Error |
+
+---
+
+## 👤 Author & License / Geliştirici ve Lisans
+
+Developed by **Yunus Emre Arıtürk**.  
+Licensed under the **MIT License**.

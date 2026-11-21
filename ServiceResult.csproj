@@ -7,10 +7,11 @@
     <Nullable>enable</Nullable>
     <PackageOutputPath>./nupkg</PackageOutputPath>
 
-    <PackageId>ServiceResult</PackageId>
+    <PackageId>ServiceResult.Http</PackageId>
     <Description>Lightweight, zero-dependency Result&lt;T&gt; wrapper for .NET, WCF, Web API, and ASP.NET Core Minimal APIs with automatic RFC 9457 ProblemDetails HTTP status mapping. | .NET, WCF, Web API ve ASP.NET Core Minimal API projeleri için sıfır bağımlılıklı Result&lt;T&gt; yanıt sarmalayıcısı ve otomatik RFC 9457 ProblemDetails HTTP durum kodu eşleyicisi.</Description>
     <PackageTags>api-response;result-pattern;minimal-api;wcf;problem-details;rfc9457;aspnet-core;endpoint-filter;error-handling;netstandard</PackageTags>
     <PackageReleaseNotes>Initial release: Multi-targeted Result, Result&lt;T&gt;, Error types for .NET Standard 2.0 (WCF/Legacy) and .NET 8+ Minimal APIs with automatic ProblemDetails mapping.</PackageReleaseNotes>
+    <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
